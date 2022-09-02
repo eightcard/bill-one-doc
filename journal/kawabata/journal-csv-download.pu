@@ -1,0 +1,49 @@
+@startuml 仕訳CSVダウンロード
+title 仕訳CSVダウンロード 
+
+actor user as u 
+participant client as cli
+control contloller as ctl
+entity journal as j
+database database as db
+entity starage as s
+
+group CSVテンプレート項目取得処理
+    cli -> ctl: POST /api/journal/accounting/journal-export-jobs
+    ctl -> j
+    j -> db: INSERT INTO journal_export_job
+    db -> j: done
+
+    group ドメインイベント登録
+        j -> db: INSERT INTO domain_event_awaiting_deployment
+        db -> j: done
+
+        j -> db: INSERT INTO domain_event_deployed
+        db -> j: done
+
+        j -> db: DELETE FROM domain_event_deployed
+        db -> j: done
+    end
+
+    group Brokerタスク
+        j -> db: SELECT FROM domain_event_deployed 
+        db -> j: done
+
+        j -> ctl: POST event-handler/journal/journal-export
+        ctl -> j: 
+        j -> db: SELECT FROM journal_row
+        db -> j:
+
+        alt 貸借別行フラグOFF
+            j -> j: CSV生成
+        else 貸借別行フラグON 
+            j -[#blue]> j : 別行分轄したCSV生成 
+            note right j: order\n1.BillOne番号\n2.行番号\n3.借方 => 貸方\n(GLOVIAサンプル参考)
+        end
+        j -> s: 保存
+        s -> j: 
+    end    
+
+    j -> ctl
+    ctl -> cli
+end
